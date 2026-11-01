@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import ValidationError
 
+from .prompts import STAGE_GUIDES
 from .schemas import Provider
 
 
@@ -63,7 +64,7 @@ class ModelClient:
             for attempt in range(3):
                 payload = json.dumps(
                     {
-                        "task": instruction,
+                        "task": instruction + "\n阶段约束：" + STAGE_GUIDES.get(stage, ""),
                         "schema": schema.model_json_schema(),
                         "data": data,
                         "correction": correction,

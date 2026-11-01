@@ -17,7 +17,9 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .conversation import reply
 from .engine import Engine
+from .exporting import report_html
 from .model import ModelClient, ModelError
+from .pdf_export import report_pdf
 from .reading import MAX_BYTES
 from .schemas import STAGES, ChatInput, ConversationName, Probe, Request, Settings
 from .store import Store
@@ -269,11 +271,23 @@ def create_app(root=None):
                 media_type="text/markdown; charset=utf-8",
                 headers={"Content-Disposition": 'attachment; filename="report.md"'},
             )
+        if format == "pdf":
+            return Response(
+                report_pdf(current),
+                media_type="application/pdf",
+                headers={"Content-Disposition": 'attachment; filename="research-report.pdf"'},
+            )
         if format == "json":
             return Response(
                 json.dumps(current, ensure_ascii=False, indent=2),
                 media_type="application/json",
                 headers={"Content-Disposition": 'attachment; filename="report.json"'},
+            )
+        if format == "html":
+            return Response(
+                report_html(current["topic"], current["state"]["report"]),
+                media_type="text/html; charset=utf-8",
+                headers={"Content-Disposition": 'attachment; filename="report.html"'},
             )
         raise HTTPException(404, "不支持的格式")
 

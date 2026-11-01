@@ -22,9 +22,25 @@ def title_key(value):
     return re.sub(r"[^\w]", "", value.casefold())
 
 
+def terms(text):
+    stop = {"and", "or", "for", "of", "in", "the", "a", "an", "with", "to", "on"}
+    return set(re.findall(r"[\w]+", text.casefold())) - stop
+
+
+def relevance_score(paper, request, queries):
+    title, abstract = terms(paper.title), terms(paper.abstract)
+    core = terms(request.topic)
+    variants = [terms(query) for query in queries if terms(query)]
+
+    # 标题的直接主题匹配权重较高；查询扩展以最佳匹配计分，避免同义词越多越受罚。
+    def coverage(wanted):
+        return (2 * len(wanted & title) + len(wanted & abstract)) / (3 * max(1, len(wanted)))
+
+    return round(0.65 * coverage(core) + 0.35 * max((coverage(v) for v in variants), default=0), 4)
+
+
 def select(papers, request, queries):
     selected, dois, titles = [], set(), set()
-    words = set(re.findall(r"\w+", " ".join(queries).lower()))
     for paper in papers:
         if paper.year is not None and not request.year_from <= paper.year <= request.year_to:
             continue
@@ -52,8 +68,9 @@ def select(papers, request, queries):
             dois.add(doi)
         titles.add(title)
         paper.sources = paper.sources or [paper.source]
-        paper.score = round(sum(w in text for w in words) / max(1, len(words)), 3)
         selected.append(paper)
+    for paper in selected:
+        paper.score = relevance_score(paper, request, queries)
     return sorted(selected, key=lambda p: p.score, reverse=True)[: request.max_papers]
 
 
@@ -77,7 +94,7 @@ class ScholarSearch:
                     notes.append(
                         {"source": source, "query": query, "status": "ok", "count": len(result)}
                     )
-                    if not result and source == "arxiv":
+                    if len(result) < request.max_papers and source == "arxiv":
                         words = [
                             w
                             for w in re.findall(r"[a-zA-Z0-9-]+", query)
@@ -103,6 +120,16 @@ class ScholarSearch:
                         else type(exc).__name__
                     )
                     notes.append({"source": source, "query": query, "status": status, "count": 0})
+                    if status in {"http_401", "http_403", "http_429"}:
+                        notes.append(
+                            {
+                                "source": source,
+                                "query": "",
+                                "status": "remaining_queries_skipped",
+                                "count": 0,
+                            }
+                        )
+                        break
             return found, notes
 
         for result, notes in await asyncio.gather(

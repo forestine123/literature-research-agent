@@ -44,9 +44,9 @@ const topic = ref(""),
   mode = ref("live"),
   yearFrom = ref(2017),
   yearTo = ref(2026),
-  maxPapers = ref(3);
-const tokenBudget = ref(300000),
-  callBudget = ref(80);
+  maxPapers = ref(5);
+const tokenBudget = ref(600000),
+  callBudget = ref(120);
 const sources = ref(["arxiv", "openalex", "semantic_scholar"]),
   exclude = ref(""),
   required = ref(false),
@@ -736,6 +736,8 @@ onUnmounted(() => {
               title="下载完整 JSON"
               >JSON</a
             >
+            <a v-if="state.report" class="primary" :href="'/api/tasks/' + current.id + '/export/pdf'"><Download :size="15"/>下载论文 PDF</a>
+            <a v-if="state.report" class="secondary" :href="'/api/tasks/' + current.id + '/export/html'">HTML</a>
           </div>
         </div>
         <Transition name="panel" mode="out-in"><div class="content-panel" :key="current.id + tab">

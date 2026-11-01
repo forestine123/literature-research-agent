@@ -727,6 +727,21 @@ def render_report(request, state):
         "",
     ]
     lines += [
+        "## 摘要",
+        "",
+        f"本次围绕“{safe(request.topic)}”开展文献调研，检索得到 {len(state['papers'])} 篇候选文献，形成 {len(state['evidence'])} 条可追溯证据。下文按方法、实验条件和局限组织样本分析；阅读覆盖与来源状态另行列明。",
+        "",
+    ]
+    for claim in state.get("analysis", {}).get("claims", [])[:2]:
+        lines += [
+            safe(claim["text"]) + " " + " ".join(f"[{eid}]" for eid in claim["evidence_ids"]),
+            "",
+        ]
+    lines += [
+        "关键词：" + "；".join(safe(t) for t in state.get("plan", {}).get("subtopics", [])[:5]),
+        "",
+    ]
+    lines += [
         "## 调研范围与来源",
         "",
         f"- 调研要求：{safe(request.focus) or '按主题开展调研'}",
@@ -787,6 +802,20 @@ def render_report(request, state):
         lines += [
             f"- **[{e['id']}]** {e['paper_id']} · {location} · {safe(e['dimension'])}：{safe(e['quote'])}"
         ]
+    lines += [
+        "",
+        "## 结论与展望",
+        "",
+        "以下归纳限于本次获取的材料，不代表对整个领域的穷尽检索。",
+        "",
+    ]
+    for claim in state.get("analysis", {}).get("claims", [])[-3:]:
+        lines += [
+            safe(claim["text"]) + " " + " ".join(f"[{eid}]" for eid in claim["evidence_ids"]),
+            "",
+        ]
+    for gap in state.get("analysis", {}).get("gaps", [])[:4]:
+        lines += ["- 后续需核验或补充：" + safe(gap)]
     lines += ["", "## 参考文献", ""]
     for paper in state["papers"]:
         lines.append(
