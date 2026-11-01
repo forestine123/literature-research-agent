@@ -1,3 +1,5 @@
+> 历史 M0 规划：最新选题报告已扩展为三源检索、FastAPI + Vue 3、五阶段 Agent 与 ChromaDB。当前实现请见 [第一版工作台](v1-workbench.md)，验收见 [记录](v1-validation.md)。下文保留作为早期设计记录。
+
 # 架构与接口
 
 ## 当前可运行流程

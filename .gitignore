@@ -19,3 +19,7 @@ build/
 Thumbs.db
 .idea/
 .vscode/
+node_modules/
+frontend/dist/
+tmp/
+.playwright-cli/

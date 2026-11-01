@@ -1,0 +1,51 @@
+<script setup lang="ts">
+import { computed, ref } from 'vue';
+import { Check, ChevronDown, LoaderCircle, ArrowUpRight, Circle, AlertCircle } from 'lucide-vue-next';
+const props=defineProps<{task:any;events:any[]}>();
+const emit=defineEmits(['navigate']);
+const expanded=ref('');
+const state=computed(()=>props.task.state || {});
+const stages=[{id:'search',name:'规划与检索',tool:'检索规划 · 学术搜索 · 去重',target:'papers'},{id:'read',name:'阅读与提取',tool:'相关性筛选 · PDF 解析 · 证据提取',target:'evidence'},{id:'analyse',name:'多文献分析',tool:'子主题分析 · 跨文献综合',target:'comparison'},{id:'outline',name:'组织大纲',tool:'章节规划 · 引用绑定',target:'report'},{id:'write',name:'写作与审查',tool:'证据写作 · 支持性审查 · 导出',target:'report'}];
+function status(id:string){if(state.value.done?.includes(id))return 'completed';if(props.task.stage===id)return ['running','queued'].includes(props.task.status)?'running':props.task.status;return 'pending';}
+const labels:Record<string,string>={completed:'已完成',running:'执行中',pending:'等待执行',failed:'失败',interrupted:'已中断',cancelled:'已停止',cancelling:'正在停止'};
+function output(id:string){const s=state.value;return ({search:`${s.plan?.queries?.length || 0} 条检索词 · ${s.papers?.length || 0} 篇候选文献`,read:`${Object.values(s.readings || {}).filter((r:any)=>r.level==='fulltext').length} 篇全文 · ${s.evidence?.length || 0} 条证据`,analyse:`${s.subanalyses?.length || 0} 个子主题 · ${s.analysis?.claims?.length || 0} 条综合结论`,outline:`${s.outline?.sections?.length || 0} 个章节`,write:`${s.sections?.length || 0} 节正文 · ${s.report ? '报告已保存':'等待报告产出'}`} as Record<string,string>)[id];}
+function calls(id:string){const all=props.events.filter(e=>e.stage===id);const map=new Map<string,any>();for(const e of all.filter(e=>e.kind==='tool'))map.set(e.detail.call_id,e);return [...map.values()].map(e=>e.detail.status==='running' && !['running','queued','cancelling'].includes(props.task.status) ? {...e,detail:{...e.detail,status:'interrupted'},message:'调用没有完成记录，任务已结束或中断。'} : e);}
+function notes(id:string){return props.events.filter(e=>e.stage===id && ['source','relevance','review','retry','fallback','supplement','failed','checkpoint'].includes(e.kind));}
+function toolResult(detail:any){const value=detail.output;if(!value)return '等待工具返回结果';if(value.candidates!=null)return `返回 ${value.candidates} 条候选记录，按条件去重筛选后进入文献库`;if(value.level)return `${({fulltext:'全文可读',abstract:'仅摘要',unavailable:'未获得可读材料'} as Record<string,string>)[value.level] || value.level} · ${value.pages} 页 · ${value.blocks} 个文本块`;if(value.indexed_blocks!=null)return `已索引 ${value.indexed_blocks} 个文本块，可用于定位原文`;if(value.hits!=null)return `命中 ${value.hits} 个相关片段，供后续证据提取`;return value.error_type ? `调用未完成：${value.error_type}` : '结果已保存';}
+function input(id:string){const s=state.value;return ({search:props.task.request.focus || props.task.topic,read:`候选文献 ${s.papers?.length || 0} 篇；区分全文、摘要与不可读取材料`,analyse:(s.plan?.dimensions || []).join(' / '),outline:'依据综合分析及有效证据组织章节',write:'按章节证据写作，审查后保存 Markdown 与 JSON'} as Record<string,string>)[id];}
+</script>
+<template>
+  <section class="execution-trace" aria-label="执行链路">
+    <header class="trace-heading"><div><span class="trace-eyebrow">RESEARCH WORKFLOW</span><h3>从研究问题到可追溯成果</h3></div><span>{{state.done?.length || 0}} / 5 阶段</span></header>
+    <p class="trace-help">展开查看实际工具调用与阶段产物。这里展示执行记录，不展示模型内部思考。</p>
+    <p v-if="state.reused_from" class="trace-reused">本版复用已保存的检索、阅读、分析与大纲，只重新写作与审查；用量含原版本累计。<a :href="'#task/'+state.reused_from">查看原版真实工具调用 →</a></p>
+    <article v-for="(stage,i) in stages" :key="stage.id" :class="['trace-stage',status(stage.id)]">
+      <button class="trace-toggle" :aria-expanded="expanded===stage.id" :aria-controls="'trace-'+stage.id" @click="expanded=expanded===stage.id?'':stage.id">
+        <span class="trace-node"><Check v-if="status(stage.id)==='completed'" :size="18"/><LoaderCircle v-else-if="status(stage.id)==='running'" class="spin" :size="18"/><AlertCircle v-else-if="['failed','interrupted'].includes(status(stage.id))" :size="18"/><Circle v-else :size="16"/></span>
+        <span class="trace-label"><strong>0{{i+1}} · {{stage.name}}</strong><small>{{stage.tool}}</small></span><span class="trace-state">{{labels[status(stage.id)] || status(stage.id)}}</span><ChevronDown :size="16" :class="{rotated:expanded===stage.id}"/>
+      </button>
+      <div class="trace-outcome"><span>{{output(stage.id)}}</span><button v-if="state.done?.includes(stage.id) || (stage.id==='read' && state.evidence?.length)" @click="emit('navigate',stage.target)">查看成果<ArrowUpRight :size="14"/></button></div>
+      <Transition name="panel"><div v-if="expanded===stage.id" :id="'trace-'+stage.id" class="trace-body">
+        <div class="trace-input"><b>本阶段输入</b><p>{{input(stage.id)}}</p><ul v-if="stage.id==='search' && state.plan"><li v-for="query in state.plan.queries" :key="query">{{query}}</li></ul></div>
+        <div v-if="state.usage?.[stage.id]" class="trace-meter">模型调用 {{state.usage[stage.id].calls}} 次 · {{(state.usage[stage.id].input_tokens+state.usage[stage.id].output_tokens).toLocaleString()}} tokens</div>
+        <div v-for="call in calls(stage.id)" :key="call.detail.call_id" class="tool-call">
+          <header><b>{{call.detail.tool}}</b><span>{{labels[call.detail.status] || call.detail.status}}<template v-if="call.detail.elapsed_ms != null"> · {{(call.detail.elapsed_ms/1000).toFixed(1)}}s</template></span></header>
+          <p>{{toolResult(call.detail)}}</p><p v-if="call.detail.input?.title" class="tool-subject">{{call.detail.input.title}}</p><details><summary>输入与输出摘要</summary><pre>{{JSON.stringify({input:call.detail.input,output:call.detail.output},null,2)}}</pre></details>
+          <button v-if="call.detail.input?.paper_id" class="tool-artifact" @click="emit('navigate',{target:'papers',paperId:call.detail.input.paper_id})">查看对应论文与阅读结果<ArrowUpRight :size="14"/></button>
+        </div>
+        <p v-if="!calls(stage.id).length" class="trace-help">{{task.request.mode==='demo' ? '合成演示：不执行真实外部工具。' : '此阶段暂无独立工具调用明细，以下为已保存的阶段事件。'}}</p>
+        <div v-for="event in notes(stage.id)" :key="event.id" class="trace-note"><time>{{new Date(event.at).toLocaleTimeString('zh-CN')}}</time><span>{{event.message}}</span><details v-if="Object.keys(event.detail || {}).length"><summary>详情</summary><pre>{{JSON.stringify(event.detail,null,2)}}</pre></details></div>
+        <div v-if="stage.id==='outline' && state.outline" class="trace-outline"><p v-for="(section,j) in state.outline.sections" :key="j">{{Number(j)+1}}. {{section.title}} <small>· {{section.evidence_ids.length}} 条证据</small></p></div>
+        <div v-if="stage.id==='analyse' && state.analysis" class="trace-analysis"><b>综合分析产物</b><p v-for="(claim,j) in state.analysis.claims.slice(0,3)" :key="j">{{claim.text}}<button v-for="id in claim.evidence_ids" :key="id" @click="emit('navigate',{target:'evidence',evidenceId:id})">查看证据 {{id}}</button></p><small>预览前 3 条结论，完整比较见报告。</small></div>
+      </div></Transition>
+    </article>
+  </section>
+</template>
+
+<style scoped>
+.tool-subject{color:#64748b;font-size:12px}
+.trace-reused{padding:12px;border:1px solid #dbe5fb;background:#f3f7ff;color:#52658a;border-radius:8px;font-size:12px;line-height:1.8}.trace-reused a{color:#4865d9;text-decoration:underline;display:block}
+.tool-artifact{color:#4865d9;min-height:36px;margin-top:6px}.trace-analysis{font-size:13px;line-height:1.9;margin-top:16px}.trace-analysis button{display:inline-flex;color:#4865d9;font-size:11px;padding:4px 6px;border:1px solid #dce5f9;border-radius:5px;margin:3px}.trace-analysis small{color:#64748b}
+.trace-body details{margin:6px 0 0;border:0;padding:0}.trace-body summary{margin:0}.trace-note details{display:block}
+.execution-trace{margin-bottom:24px}.trace-heading{display:flex;justify-content:space-between;align-items:center;gap:12px}.trace-eyebrow{font-size:10px;letter-spacing:1.7px;color:#6980b0}.trace-heading h3{font-size:18px;margin:8px 0;color:#293b5a}.trace-heading>span{white-space:nowrap;font-size:12px;color:#64748b}.trace-help{font-size:12px;color:#64748b;line-height:1.8}.trace-stage{border:1px solid #e0e6f0;border-radius:12px;margin-top:12px;background:#fff;position:relative}.trace-stage.running{border-color:#9fb3ef;box-shadow:0 0 0 3px #4865d90a}.trace-toggle{width:100%;text-align:left;justify-content:flex-start;padding:16px;gap:12px}.trace-node{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:#7a879b;background:#f1f4f9;flex-shrink:0}.completed .trace-node{background:#eaf5ef;color:#398467}.running .trace-node{background:#edf2ff;color:#4865d9}.failed .trace-node{color:#b64f4f;background:#fff0ee}.trace-label{flex:1;min-width:0}.trace-label strong{display:block;font-size:14px;color:#2d3f5d}.trace-label small{display:block;margin-top:6px;color:#64748b;font-size:12px}.trace-state{font-size:11px;white-space:nowrap;color:#61718b}.trace-toggle>svg{transition:transform 220ms ease}.rotated{transform:rotate(180deg)}.trace-outcome{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:0 16px 14px 60px;font-size:12px;color:#52658a}.trace-outcome button{color:#4865d9;min-height:32px;white-space:nowrap}.trace-body{padding:0 18px 18px;border-top:1px solid #edf0f6}.trace-input{padding-top:14px;font-size:12px;color:#52658a}.trace-input p,.trace-input li{line-height:1.8}.trace-meter{font-size:11px;color:#64748b;padding:10px 0}.tool-call{border:1px solid #e1e8f4;border-radius:8px;padding:12px;margin-top:8px;background:#f9fbff;font-size:12px}.tool-call header{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}.tool-call header span{color:#64748b}.tool-call p{line-height:1.8}.trace-body summary{cursor:pointer;color:#4865d9;font-size:12px;padding:5px 0}.trace-body pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:250px;overflow:auto;font-size:12px;background:#f2f5fa;padding:12px;border-radius:6px}.trace-note{padding:10px 0;border-bottom:1px solid #edf0f5;font-size:12px;line-height:1.8}.trace-note time{color:#7b89a0;margin-right:10px}.trace-outline{font-size:13px;line-height:1.8}.trace-outline small{color:#64748b}@media(max-width:780px){.trace-toggle{padding:12px;gap:8px}.trace-outcome{margin-left:16px;flex-wrap:wrap}.trace-label small{font-size:11px}.trace-heading h3{font-size:16px}.trace-state{font-size:10px}}
+</style>
